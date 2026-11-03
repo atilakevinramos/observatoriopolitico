@@ -20,7 +20,8 @@
 }
 
 body {
-    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI",
+        Roboto, Helvetica, Arial, sans-serif;
     background-color: var(--bg-main);
     color: var(--text-primary);
     line-height: 1.5;
@@ -157,7 +158,8 @@ label {
     margin-bottom: 6px;
 }
 
-input[type="text"], select {
+input[type="text"],
+select {
     width: 100%;
     padding: 10px 12px;
     border: 1px solid var(--border);
@@ -167,7 +169,8 @@ input[type="text"], select {
     color: var(--text-primary);
 }
 
-input[type="text"]:focus, select:focus {
+input[type="text"]:focus,
+select:focus {
     outline: 2px solid var(--accent);
 }
 
@@ -239,7 +242,8 @@ input[type="text"]:focus, select:focus {
     margin-bottom: 16px;
 }
 
-.btn-primary, .btn-secondary {
+.btn-primary,
+.btn-secondary {
     padding: 10px 16px;
     border-radius: var(--radius);
     font-size: 0.9rem;
@@ -341,7 +345,8 @@ input[type="text"]:focus, select:focus {
     font-size: 0.85rem;
 }
 
-.data-table th, .data-table td {
+.data-table th,
+.data-table td {
     text-align: left;
     padding: 8px 6px;
     border-bottom: 1px solid var(--border);
@@ -373,9 +378,12 @@ input[type="text"]:focus, select:focus {
     text-decoration: underline;
 }
 
+/* --- RESPONSIVIDADE --- */
 @media (max-width: 640px) {
+
     .profile-header-card {
         flex-direction: column;
         text-align: center;
     }
+
 }

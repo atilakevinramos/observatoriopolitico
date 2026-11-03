@@ -1,43 +1,95 @@
 /**
  * Observatório Parlamentar
- * Arquitetura baseada em serviços com proxy CORS estável para o GitHub Pages.
+ * Consulta dados oficiais da Câmara dos Deputados.
  */
 
+// --- CONFIGURAÇÕES ---
 const CONFIG = {
-    // Utiliza um proxy CORS de alta disponibilidade para requisições no GitHub Pages
-    BASE_URL: 'https://corsproxy.io/?' + encodeURIComponent('https://dadosabertos.camara.leg.br/api/v2'),
-    CACHE_EXPIRATION_MS: 1000 * 60 * 30 // 30 minutos
+    API_URL: 'https://dadosabertos.camara.leg.br/api/v2',
+
+    // Proxy CORS
+    BASE_URL: 'https://corsproxy.io/?url=' +
+        encodeURIComponent('https://dadosabertos.camara.leg.br/api/v2'),
+
+    ITEMS_PER_PAGE: 100,
+    CACHE_EXPIRATION_MS: 1000 * 60 * 30
 };
 
-// --- MÓDULO DE SERVIÇO DE DADOS (CÂMARA DOS DEPUTADOS) ---
+// --- MÓDULO DE SERVIÇO DE DADOS ---
 const FederalChamberService = {
+
+    async request(endpoint) {
+        const url = `${CONFIG.BASE_URL}${endpoint}`;
+
+        const response = await fetch(url);
+
+        if (!response.ok) {
+            throw new Error(
+                `Erro HTTP ${response.status} ao consultar a API.`
+            );
+        }
+
+        return await response.json();
+    },
+
+    // Busca todas as páginas de um endpoint paginado.
+    async fetchAllPages(endpoint) {
+        let allData = [];
+        let page = 1;
+
+        while (true) {
+            const separator = endpoint.includes('?') ? '&' : '?';
+
+            const paginatedEndpoint =
+                `${endpoint}${separator}pagina=${page}&itens=${CONFIG.ITEMS_PER_PAGE}`;
+
+            const json = await this.request(paginatedEndpoint);
+
+            const data = json.dados || [];
+
+            allData = allData.concat(data);
+
+            if (data.length < CONFIG.ITEMS_PER_PAGE) {
+                break;
+            }
+
+            page++;
+
+            // Proteção contra paginação excessiva.
+            if (page > 100) {
+                console.warn('Limite de páginas atingido.');
+                break;
+            }
+        }
+
+        return allData;
+    },
+
     async fetchDeputies() {
-        const response = await fetch(`${CONFIG.BASE_URL}/deputados?ordem=ASC&ordenarPor=nome`);
-        if (!response.ok) throw new Error('Falha ao consultar a lista de deputados.');
-        const json = await response.json();
-        return json.dados;
+        return await this.fetchAllPages(
+            '/deputados?ordem=ASC&ordenarPor=nome'
+        );
     },
 
     async fetchDeputyById(id) {
-        const response = await fetch(`${CONFIG.BASE_URL}/deputados/${id}`);
-        if (!response.ok) throw new Error('Falha ao consultar os dados do parlamentar.');
-        const json = await response.json();
+        const json = await this.request(`/deputados/${id}`);
         return json.dados;
     },
 
     async fetchDeputyExpenses(id) {
         const anoAtual = new Date().getFullYear();
-        const response = await fetch(`${CONFIG.BASE_URL}/deputados/${id}/despesas?ano=${anoAtual}&ordem=DESC&ordenarPor=dataDocumento&itens=100`);
-        if (!response.ok) throw new Error('Falha ao consultar despesas.');
-        const json = await response.json();
-        return json.dados;
+
+        return await this.fetchAllPages(
+            `/deputados/${id}/despesas?ano=${anoAtual}&ordem=DESC&ordenarPor=dataDocumento`
+        );
     },
 
     async fetchDeputyPropositions(id) {
-        const response = await fetch(`${CONFIG.BASE_URL}/proposicoes?idDeputadoAutor=${id}&ordem=DESC&ordenarPor=id&itens=100`);
-        if (!response.ok) throw new Error('Falha ao consultar proposições.');
-        const json = await response.json();
-        return json.dados;
+        const json = await this.request(
+            `/proposicoes?idDeputadoAutor=${id}&ordem=DESC&ordenarPor=id&pagina=1&itens=${CONFIG.ITEMS_PER_PAGE}`
+        );
+
+        return json.dados || [];
     }
 };
 
@@ -77,7 +129,9 @@ async function initApp() {
     await loadInitialData();
 }
 
+// --- EVENTOS ---
 function setupEventListeners() {
+
     DOM.searchInput.addEventListener('input', (e) => {
         AppState.currentSearchQuery = e.target.value.toLowerCase().trim();
         applyFilters();
@@ -95,6 +149,16 @@ function setupEventListeners() {
 
     DOM.btnBack.addEventListener('click', () => {
         showListView();
+        hideError();
+    });
+
+    // Evento dos botões de perfil.
+    DOM.deputiesGrid.addEventListener('click', (e) => {
+        const button = e.target.closest('[data-deputy-id]');
+
+        if (button) {
+            openProfile(Number(button.dataset.deputyId));
+        }
     });
 }
 
@@ -105,238 +169,446 @@ async function loadInitialData() {
 
     try {
         const deputies = await FederalChamberService.fetchDeputies();
+
         AppState.deputies = deputies;
         AppState.filteredDeputies = deputies;
 
         populateKPIs(deputies);
         populateFilterDropdowns(deputies);
         renderDeputiesList(deputies);
+
     } catch (err) {
-        showError('Não foi possível carregar os dados dos deputados federais. Verifique sua conexão e tente novamente.');
-        console.error(err);
+        console.error('Erro ao carregar deputados:', err);
+
+        showError(
+            'Não foi possível carregar os dados dos deputados federais. ' +
+            'Verifique sua conexão, o acesso ao CorsProxy e tente novamente.'
+        );
+
     } finally {
         showLoading(false);
     }
 }
 
-// --- RENDERIZAÇÃO E FILTROS DO DASHBOARD ---
+// --- INDICADORES DO DASHBOARD ---
 function populateKPIs(deputies) {
     DOM.kpiTotalDeputados.textContent = deputies.length;
-    
-    const states = new Set(deputies.map(d => d.siglaUf));
+
+    const states = new Set(
+        deputies.map(d => d.siglaUf).filter(Boolean)
+    );
+
     DOM.kpiTotalEstados.textContent = states.size;
 }
 
+// --- FILTROS ---
 function populateFilterDropdowns(deputies) {
-    const states = [...new Set(deputies.map(d => d.siglaUf))].sort();
-    const parties = [...new Set(deputies.map(d => d.siglaPartido))].sort();
+
+    DOM.filterUf.innerHTML =
+        '<option value="">Todos os Estados</option>';
+
+    DOM.filterParty.innerHTML =
+        '<option value="">Todos os Partidos</option>';
+
+    const states = [
+        ...new Set(deputies.map(d => d.siglaUf).filter(Boolean))
+    ].sort();
+
+    const parties = [
+        ...new Set(deputies.map(d => d.siglaPartido).filter(Boolean))
+    ].sort();
 
     states.forEach(uf => {
-        if (uf) {
-            const opt = document.createElement('option');
-            opt.value = uf;
-            opt.textContent = uf;
-            DOM.filterUf.appendChild(opt);
-        }
+        const option = document.createElement('option');
+        option.value = uf;
+        option.textContent = uf;
+        DOM.filterUf.appendChild(option);
     });
 
     parties.forEach(party => {
-        if (party) {
-            const opt = document.createElement('option');
-            opt.value = party;
-            opt.textContent = party;
-            DOM.filterParty.appendChild(opt);
-        }
+        const option = document.createElement('option');
+        option.value = party;
+        option.textContent = party;
+        DOM.filterParty.appendChild(option);
     });
 }
 
 function applyFilters() {
     AppState.filteredDeputies = AppState.deputies.filter(deputy => {
-        const matchesName = deputy.nome.toLowerCase().includes(AppState.currentSearchQuery);
-        const matchesUf = AppState.currentUfFilter === '' || deputy.siglaUf === AppState.currentUfFilter;
-        const matchesParty = AppState.currentPartyFilter === '' || deputy.siglaPartido === AppState.currentPartyFilter;
+
+        const name = (deputy.nome || '').toLowerCase();
+
+        const matchesName =
+            name.includes(AppState.currentSearchQuery);
+
+        const matchesUf =
+            AppState.currentUfFilter === '' ||
+            deputy.siglaUf === AppState.currentUfFilter;
+
+        const matchesParty =
+            AppState.currentPartyFilter === '' ||
+            deputy.siglaPartido === AppState.currentPartyFilter;
+
         return matchesName && matchesUf && matchesParty;
     });
 
     renderDeputiesList(AppState.filteredDeputies);
 }
 
+// --- SEGURANÇA PARA EXIBIÇÃO DE TEXTOS ---
+function escapeHTML(value) {
+    return String(value ?? '').replace(/[&<>"']/g, char => {
+        const entities = {
+            '&': '&amp;',
+            '<': '&lt;',
+            '>': '&gt;',
+            '"': '&quot;',
+            "'": '&#039;'
+        };
+
+        return entities[char];
+    });
+}
+
+// --- LISTA DE DEPUTADOS ---
 function renderDeputiesList(deputies) {
     DOM.deputiesGrid.innerHTML = '';
 
     if (deputies.length === 0) {
-        DOM.deputiesGrid.innerHTML = '<p class="status-message">Nenhum deputado encontrado com os filtros selecionados.</p>';
+        DOM.deputiesGrid.innerHTML =
+            '<p class="status-message">Nenhum deputado encontrado com os filtros selecionados.</p>';
+
         return;
     }
 
     deputies.forEach(deputy => {
+
         const card = document.createElement('div');
         card.className = 'deputy-card';
 
-        const photoUrl = deputy.urlFoto || 'https://via.placeholder.com/150x200?text=Sem+Foto';
-        
+        const photoUrl = escapeHTML(
+            deputy.urlFoto ||
+            'https://via.placeholder.com/150x200?text=Sem+Foto'
+        );
+
+        const name = escapeHTML(deputy.nome);
+        const party = escapeHTML(deputy.siglaPartido || 'N/A');
+        const uf = escapeHTML(deputy.siglaUf || 'N/A');
+
         card.innerHTML = `
-            <img src="${photoUrl}" alt="${deputy.nome}" class="deputy-avatar" loading="lazy">
+            <img
+                src="${photoUrl}"
+                alt="${name}"
+                class="deputy-avatar"
+                loading="lazy"
+            >
+
             <div class="deputy-info">
-                <h3 class="deputy-name">${deputy.nome}</h3>
-                <p class="deputy-meta">${deputy.siglaPartido || 'N/A'} - ${deputy.siglaUf || 'N/A'}</p>
-                <button class="btn-primary" onclick="openProfile(${deputy.id})">Ver Perfil Completo</button>
+                <h3 class="deputy-name">${name}</h3>
+
+                <p class="deputy-meta">
+                    ${party} - ${uf}
+                </p>
+
+                <button
+                    class="btn-primary"
+                    data-deputy-id="${Number(deputy.id)}"
+                >
+                    Ver Perfil Completo
+                </button>
             </div>
         `;
+
         DOM.deputiesGrid.appendChild(card);
     });
 }
 
-// --- VISÃO DE PERFIL INDIVIDUAL ---
+// --- PERFIL INDIVIDUAL ---
 async function openProfile(deputyId) {
+
+    AppState.selectedDeputy = deputyId;
+
     showListView(false);
+
     DOM.profileContent.innerHTML = '';
+
     showLoading(true);
     hideError();
 
     try {
+
         const [details, expenses, propositions] = await Promise.all([
+
             FederalChamberService.fetchDeputyById(deputyId),
+
             FederalChamberService.fetchDeputyExpenses(deputyId),
+
             FederalChamberService.fetchDeputyPropositions(deputyId)
+
         ]);
 
         renderProfile(details, expenses, propositions);
+
     } catch (err) {
-        showError('Erro ao carregar os dados detalhados do parlamentar.');
-        console.error(err);
+
+        console.error('Erro ao carregar perfil:', err);
+
+        showError(
+            'Erro ao carregar os dados detalhados do parlamentar. ' +
+            'Tente novamente.'
+        );
+
     } finally {
         showLoading(false);
     }
 }
 
+// --- RENDERIZAÇÃO DO PERFIL ---
 function renderProfile(details, expenses, propositions) {
-    const statusInfo = details.ultimoStatus || {};
-    const photoUrl = statusInfo.urlFoto || 'https://via.placeholder.com/150x200?text=Sem+Foto';
 
+    const statusInfo = details.ultimoStatus || {};
+
+    const photoUrl = escapeHTML(
+        statusInfo.urlFoto ||
+        'https://via.placeholder.com/150x200?text=Sem+Foto'
+    );
+
+    // --- DESPESAS ---
     let totalSpent = 0;
+
     const categoryTotals = {};
-    
+
     expenses.forEach(exp => {
-        const value = exp.valorLiquido || 0;
+
+        const value = Number(exp.valorLiquido) || 0;
+
         totalSpent += value;
-        const cat = exp.tipoDespesa || 'Outras Despesas';
-        categoryTotals[cat] = (categoryTotals[cat] || 0) + value;
+
+        const category = exp.tipoDespesa || 'Outras Despesas';
+
+        categoryTotals[category] =
+            (categoryTotals[category] || 0) + value;
     });
 
-    const propStats = {
-        total: propositions.length,
-        tramitacao: 0,
-        outros: 0
+    const formatCurrency = (value) => {
+
+        return new Intl.NumberFormat('pt-BR', {
+            style: 'currency',
+            currency: 'BRL'
+        }).format(value);
     };
 
-    propositions.forEach(p => {
-        if (p.statusProposicao && p.statusProposicao.ambito) {
-            propStats.tramitacao++;
-        } else {
-            propStats.outros++;
-        }
-    });
+    const expensesRows = Object.entries(categoryTotals)
 
-    const formatCurrency = (val) => new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(val);
+        .map(([category, value]) => `
+            <tr>
+                <td>${escapeHTML(category)}</td>
+                <td>${formatCurrency(value)}</td>
+            </tr>
+        `)
 
-    let expensesRows = Object.entries(categoryTotals)
-        .map(([cat, val]) => `<tr><td>${cat}</td><td>${formatCurrency(val)}</td></tr>`)
-        .join('');
+        .join('') ||
 
-    if (!expensesRows) {
-        expensesRows = '<tr><td colspan="2">Nenhuma despesa declarada no lote consultado.</td></tr>';
-    }
+        '<tr><td colspan="2">Nenhuma despesa encontrada no período consultado.</td></tr>';
 
-    let propRows = propositions.slice(0, 10).map(p => `
-        <tr>
-            <td><strong>${p.siglaTipo} ${p.numero}/${p.ano}</strong></td>
-            <td>${p.ementa || 'Sem ementa informada'}</td>
-        </tr>
-    `).join('');
+    // --- PROPOSIÇÕES ---
+    const propRows = propositions.slice(0, 10)
 
-    if (!propRows) {
-        propRows = '<tr><td colspan="2">Nenhuma proposição recente encontrada.</td></tr>';
-    }
+        .map(proposition => `
+            <tr>
+                <td>
+                    <strong>
+                        ${escapeHTML(proposition.siglaTipo)}
+                        ${escapeHTML(proposition.numero)}/${escapeHTML(proposition.ano)}
+                    </strong>
+                </td>
+
+                <td>
+                    ${escapeHTML(
+                        proposition.ementa || 'Sem ementa informada'
+                    )}
+                </td>
+            </tr>
+        `)
+
+        .join('') ||
+
+        '<tr><td colspan="2">Nenhuma proposição recente encontrada.</td></tr>';
+
+    const currentYear = new Date().getFullYear();
+
+    const deputyName = escapeHTML(
+        details.nomeCivil ||
+        statusInfo.nome ||
+        'Nome não informado'
+    );
+
+    const parliamentaryName = escapeHTML(
+        statusInfo.nomeParlamentar ||
+        statusInfo.nome ||
+        'Não informado'
+    );
+
+    const party = escapeHTML(statusInfo.siglaPartido || 'Não informado');
+
+    const uf = escapeHTML(statusInfo.siglaUf || 'Não informado');
+
+    const situation = escapeHTML(
+        statusInfo.situacao || 'Não informada'
+    );
+
+    const electionCondition = escapeHTML(
+        statusInfo.condicaoEleitoral || 'Não informada'
+    );
 
     DOM.profileContent.innerHTML = `
+
         <div class="profile-header-card">
-            <img src="${photoUrl}" alt="${details.nomeCivil}" class="profile-avatar">
+
+            <img
+                src="${photoUrl}"
+                alt="${deputyName}"
+                class="profile-avatar"
+            >
+
             <div class="profile-details-main">
-                <h2>${details.nomeCivil || statusInfo.nome}</h2>
-                <p><strong>Nome Parlamentar:</strong> ${statusInfo.nomeParlamentar || statusInfo.nome}</p>
-                <p><strong>Partido / UF:</strong> ${statusInfo.siglaPartido} - ${statusInfo.siglaUf}</p>
-                <p><strong>Situação Parlamentar:</strong> ${statusInfo.situacao || 'Em Exercício'}</p>
-                <p><strong>Condição de Posse:</strong> ${statusInfo.condicaoEleitoral || 'Não informada'}</p>
+
+                <h2>${deputyName}</h2>
+
+                <p>
+                    <strong>Nome Parlamentar:</strong>
+                    ${parliamentaryName}
+                </p>
+
+                <p>
+                    <strong>Partido / UF:</strong>
+                    ${party} - ${uf}
+                </p>
+
+                <p>
+                    <strong>Situação Parlamentar:</strong>
+                    ${situation}
+                </p>
+
+                <p>
+                    <strong>Condição de Posse:</strong>
+                    ${electionCondition}
+                </p>
+
             </div>
+
         </div>
 
         <div class="profile-grid">
+
             <div class="panel-card">
+
                 <h3>Cota Parlamentar (Despesas)</h3>
-                <p><strong>Total Gasto no Período Consultado:</strong> ${formatCurrency(totalSpent)}</p>
-                
+
+                <p>
+                    <strong>Total Gasto em ${currentYear}:</strong>
+                    ${formatCurrency(totalSpent)}
+                </p>
+
                 <table class="data-table">
+
                     <thead>
                         <tr>
                             <th>Categoria da Despesa</th>
                             <th>Valor Total</th>
                         </tr>
                     </thead>
+
                     <tbody>
                         ${expensesRows}
                     </tbody>
+
                 </table>
-                <p class="source-notice">Fonte: API de Dados Abertos / Amostra dos últimos 100 lançamentos processados.</p>
+
+                <p class="source-notice">
+                    Fonte: API de Dados Abertos da Câmara dos Deputados.
+                    Período: ${currentYear}.
+                    Foram consultadas as páginas disponíveis da API.
+                </p>
+
             </div>
 
             <div class="panel-card">
+
                 <h3>Proposições de Autoria</h3>
-                <p><strong>Total de Proposições Apresentadas (Amostra):</strong> ${propStats.total}</p>
-                
+
+                <p>
+                    <strong>Proposições encontradas:</strong>
+                    ${propositions.length}
+                </p>
+
                 <table class="data-table">
+
                     <thead>
                         <tr>
                             <th>Tipo / Número</th>
                             <th>Ementa</th>
                         </tr>
                     </thead>
+
                     <tbody>
                         ${propRows}
                     </tbody>
+
                 </table>
+
                 <p class="source-notice">
-                    Nota: O status de aprovação definitiva exige consulta individualizada a cada norma jurídica vinculada.
+                    Fonte: API de Dados Abertos da Câmara dos Deputados.
+                    Consulta limitada às 100 proposições mais recentes.
+                    A quantidade encontrada não representa necessariamente
+                    toda a produção legislativa do parlamentar.
                 </p>
+
             </div>
+
         </div>
     `;
 }
 
-// --- AUXILIARES DE NAVEGAÇÃO E INTERFACE ---
+// --- NAVEGAÇÃO ---
 function showListView(show = true) {
+
     if (show) {
+
         DOM.deputiesView.classList.remove('hidden');
+
         DOM.profileView.classList.add('hidden');
+
     } else {
+
         DOM.deputiesView.classList.add('hidden');
+
         DOM.profileView.classList.remove('hidden');
     }
 }
 
+// --- CARREGAMENTO ---
 function showLoading(show = true) {
+
     if (show) {
+
         DOM.loadingSpinner.classList.remove('hidden');
+
     } else {
+
         DOM.loadingSpinner.classList.add('hidden');
     }
 }
 
-function showError(msg) {
-    DOM.errorMessage.textContent = msg;
+// --- MENSAGENS ---
+function showError(message) {
+
+    DOM.errorMessage.textContent = message;
+
     DOM.errorMessage.classList.remove('hidden');
 }
 
 function hideError() {
+
     DOM.errorMessage.classList.add('hidden');
 }

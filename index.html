@@ -1,96 +1,232 @@
 <!DOCTYPE html>
 <html lang="pt-BR">
+
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
+
     <title>Observatório Parlamentar | Transparência Pública</title>
+
     <link rel="stylesheet" href="style.css">
 </head>
+
 <body>
+
     <header class="main-header">
+
         <div class="container header-container">
+
             <div class="logo-area">
+
                 <h1>Observatório Parlamentar</h1>
-                <p>Plataforma de Transparência e Acompanhamento Legislativo</p>
+
+                <p>
+                    Plataforma de Transparência e Acompanhamento Legislativo
+                </p>
+
             </div>
+
             <div class="scope-badge">
+
                 <span>Esfera: Federal (Câmara dos Deputados)</span>
+
             </div>
+
         </div>
+
     </header>
 
     <main class="container">
+
         <!-- Dashboard / Visão Geral -->
         <section class="intro-section">
+
             <p class="intro-text">
-                Consulte dados oficiais, objetivos e verificáveis sobre a atuação dos deputados federais em exercício no Brasil.
-                Todos os dados são consumidos diretamente da API oficial de Dados Abertos da Câmara dos Deputados.
+                Consulte dados oficiais, objetivos e verificáveis sobre
+                a atuação dos deputados federais em exercício no Brasil.
+                Os dados são consultados na API oficial de Dados Abertos
+                da Câmara dos Deputados.
             </p>
 
             <div class="kpi-grid">
+
                 <div class="kpi-card">
-                    <span class="kpi-title">Deputados em Exercício</span>
-                    <span class="kpi-value" id="kpi-total-deputados">--</span>
+
+                    <span class="kpi-title">
+                        Deputados em Exercício
+                    </span>
+
+                    <span
+                        class="kpi-value"
+                        id="kpi-total-deputados"
+                    >
+                        --
+                    </span>
+
                 </div>
+
                 <div class="kpi-card">
-                    <span class="kpi-title">Estados Representados</span>
-                    <span class="kpi-value" id="kpi-total-estados">--</span>
+
+                    <span class="kpi-title">
+                        Estados Representados
+                    </span>
+
+                    <span
+                        class="kpi-value"
+                        id="kpi-total-estados"
+                    >
+                        --
+                    </span>
+
                 </div>
+
                 <div class="kpi-card">
-                    <span class="kpi-title">Fonte Primária</span>
-                    <span class="kpi-value kpi-small">Dados Abertos (v2)</span>
+
+                    <span class="kpi-title">
+                        Fonte Primária
+                    </span>
+
+                    <span class="kpi-value kpi-small">
+                        Dados Abertos (v2)
+                    </span>
+
                 </div>
+
             </div>
+
         </section>
 
         <!-- Filtros e Busca -->
         <section class="controls-section">
+
             <div class="search-box">
-                <label for="search-input">Pesquisar por nome:</label>
-                <input type="text" id="search-input" placeholder="Digite o nome do parlamentar...">
+
+                <label for="search-input">
+                    Pesquisar por nome:
+                </label>
+
+                <input
+                    type="text"
+                    id="search-input"
+                    placeholder="Digite o nome do parlamentar..."
+                >
+
             </div>
+
             <div class="filters-box">
+
                 <div class="filter-group">
-                    <label for="filter-uf">Estado (UF):</label>
+
+                    <label for="filter-uf">
+                        Estado (UF):
+                    </label>
+
                     <select id="filter-uf">
-                        <option value="">Todos os Estados</option>
+
+                        <option value="">
+                            Todos os Estados
+                        </option>
+
                     </select>
+
                 </div>
+
                 <div class="filter-group">
-                    <label for="filter-party">Partido:</label>
+
+                    <label for="filter-party">
+                        Partido:
+                    </label>
+
                     <select id="filter-party">
-                        <option value="">Todos os Partidos</option>
+
+                        <option value="">
+                            Todos os Partidos
+                        </option>
+
                     </select>
+
                 </div>
+
             </div>
+
         </section>
 
-        <!-- Status de Carregamento e Erro -->
-        <div id="loading-spinner" class="status-message">Carregando dados da Câmara dos Deputados...</div>
-        <div id="error-message" class="status-message error hidden"></div>
+        <!-- Carregamento e Erros -->
+        <div
+            id="loading-spinner"
+            class="status-message"
+        >
+            Carregando dados da Câmara dos Deputados...
+        </div>
+
+        <div
+            id="error-message"
+            class="status-message error hidden"
+        ></div>
 
         <!-- Lista de Deputados -->
-        <section id="deputies-view" class="deputies-section">
-            <div id="deputies-grid" class="deputies-grid"></div>
+        <section
+            id="deputies-view"
+            class="deputies-section"
+        >
+
+            <div
+                id="deputies-grid"
+                class="deputies-grid"
+            ></div>
+
         </section>
 
-        <!-- Área de Perfil Individual (Oculta por padrão) -->
-        <section id="profile-view" class="profile-section hidden">
-            <button id="btn-back" class="btn-secondary">&larr; Voltar para a lista</button>
-            
-            <div id="profile-content" class="profile-content">
-                <!-- Conteúdo injetado via JS -->
+        <!-- Perfil Individual -->
+        <section
+            id="profile-view"
+            class="profile-section hidden"
+        >
+
+            <button
+                id="btn-back"
+                class="btn-secondary"
+            >
+                &larr; Voltar para a lista
+            </button>
+
+            <div
+                id="profile-content"
+                class="profile-content"
+            >
+                <!-- Conteúdo injetado via JavaScript -->
             </div>
+
         </section>
+
     </main>
 
     <footer class="main-footer">
+
         <div class="container footer-container">
-            <p><strong>Observatório Parlamentar</strong> &copy; 2026. Plataforma neutra e independente de dados abertos.</p>
-            <p>Fonte dos dados: <a href="https://dadosabertos.camara.leg.br/" target="_blank" rel="noopener">Câmara dos Deputados do Brasil</a></p>
+
+            <p>
+                <strong>Observatório Parlamentar</strong>
+                &copy; 2026. Plataforma independente de dados abertos.
+            </p>
+
+            <p>
+                Fonte dos dados:
+                <a
+                    href="https://dadosabertos.camara.leg.br/"
+                    target="_blank"
+                    rel="noopener"
+                >
+                    Câmara dos Deputados do Brasil
+                </a>
+            </p>
+
         </div>
+
     </footer>
 
     <script src="app.js"></script>
+
 </body>
+
 </html>
