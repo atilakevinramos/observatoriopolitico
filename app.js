@@ -1,10 +1,11 @@
 /**
  * Observatório Parlamentar
- * Arquitetura baseada em serviços para facilitação de futuras expansões (Senadores, Estaduais).
+ * Arquitetura baseada em serviços com proxy CORS intermediário e parâmetro de ano para o resgate de despesas.
  */
 
 const CONFIG = {
-    BASE_URL: 'https://dadosabertos.camara.leg.br/api/v2',
+    // URL base com proxy CORS público embutido para evitar bloqueios no GitHub Pages
+    BASE_URL: 'https://api.allorigins.win/raw?url=' + encodeURIComponent('https://dadosabertos.camara.leg.br/api/v2'),
     CACHE_EXPIRATION_MS: 1000 * 60 * 30 // 30 minutos
 };
 
@@ -25,8 +26,9 @@ const FederalChamberService = {
     },
 
     async fetchDeputyExpenses(id) {
-        // Busca as despesas mais recentes ordenadas por data
-        const response = await fetch(`${CONFIG.BASE_URL}/deputados/${id}/despesas?ordem=DESC&ordenarPor=dataDocumento&itens=100`);
+        // Consulta o ano atual para garantir o retorno correto dos lançamentos da cota parlamentar
+        const anoAtual = new Date().getFullYear();
+        const response = await fetch(`${CONFIG.BASE_URL}/deputados/${id}/despesas?ano=${anoAtual}&ordem=DESC&ordenarPor=dataDocumento&itens=100`);
         if (!response.ok) throw new Error('Falha ao consultar despesas.');
         const json = await response.json();
         return json.dados;
@@ -212,9 +214,7 @@ async function openProfile(deputyId) {
 function renderProfile(details, expenses, propositions) {
     const statusInfo = details.ultimoStatus || {};
     const photoUrl = statusInfo.urlFoto || 'https://via.placeholder.com/150x200?text=Sem+Foto';
-    const startDate = details.dataNascimento ? statusInfo.data : 'Não informado pela API';
 
-    // Processamento estrito de Despesas
     let totalSpent = 0;
     const categoryTotals = {};
     
@@ -225,15 +225,12 @@ function renderProfile(details, expenses, propositions) {
         categoryTotals[cat] = (categoryTotals[cat] || 0) + value;
     });
 
-    // Processamento estrito de Proposições
     const propStats = {
         total: propositions.length,
         tramitacao: 0,
         outros: 0
     };
 
-    // Nota: A API de listagem simples não retorna o status consolidado de "aprovado" sem consultar proposição por proposição individualmente.
-    // Classificamos estritamente o que está em tramitação sem inferir aprovação.
     propositions.forEach(p => {
         if (p.statusProposicao && p.statusProposicao.ambito) {
             propStats.tramitacao++;
@@ -242,10 +239,8 @@ function renderProfile(details, expenses, propositions) {
         }
     });
 
-    // Formatação em BRL
     const formatCurrency = (val) => new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(val);
 
-    // HTML das categorias de despesas
     let expensesRows = Object.entries(categoryTotals)
         .map(([cat, val]) => `<tr><td>${cat}</td><td>${formatCurrency(val)}</td></tr>`)
         .join('');
@@ -254,7 +249,6 @@ function renderProfile(details, expenses, propositions) {
         expensesRows = '<tr><td colspan="2">Nenhuma despesa declarada no lote consultado.</td></tr>';
     }
 
-    // HTML de Proposições
     let propRows = propositions.slice(0, 10).map(p => `
         <tr>
             <td><strong>${p.siglaTipo} ${p.numero}/${p.ano}</strong></td>
@@ -279,7 +273,6 @@ function renderProfile(details, expenses, propositions) {
         </div>
 
         <div class="profile-grid">
-            <!-- PAINEL DE DESPESAS -->
             <div class="panel-card">
                 <h3>Cota Parlamentar (Despesas)</h3>
                 <p><strong>Total Gasto no Período Consultado:</strong> ${formatCurrency(totalSpent)}</p>
@@ -298,7 +291,6 @@ function renderProfile(details, expenses, propositions) {
                 <p class="source-notice">Fonte: API de Dados Abertos / Amostra dos últimos 100 lançamentos processados.</p>
             </div>
 
-            <!-- PAINEL DE PROPOSIÇÕES -->
             <div class="panel-card">
                 <h3>Proposições de Autoria</h3>
                 <p><strong>Total de Proposições Apresentadas (Amostra):</strong> ${propStats.total}</p>
