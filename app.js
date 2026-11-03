@@ -1,11 +1,11 @@
 /**
  * Observatório Parlamentar
- * Arquitetura baseada em serviços com proxy CORS intermediário e parâmetro de ano para o resgate de despesas.
+ * Arquitetura baseada em serviços com proxy CORS estável para o GitHub Pages.
  */
 
 const CONFIG = {
-    // URL base com proxy CORS público embutido para evitar bloqueios no GitHub Pages
-    BASE_URL: 'https://api.allorigins.win/raw?url=' + encodeURIComponent('https://dadosabertos.camara.leg.br/api/v2'),
+    // Utiliza um proxy CORS de alta disponibilidade para requisições no GitHub Pages
+    BASE_URL: 'https://corsproxy.io/?' + encodeURIComponent('https://dadosabertos.camara.leg.br/api/v2'),
     CACHE_EXPIRATION_MS: 1000 * 60 * 30 // 30 minutos
 };
 
@@ -26,7 +26,6 @@ const FederalChamberService = {
     },
 
     async fetchDeputyExpenses(id) {
-        // Consulta o ano atual para garantir o retorno correto dos lançamentos da cota parlamentar
         const anoAtual = new Date().getFullYear();
         const response = await fetch(`${CONFIG.BASE_URL}/deputados/${id}/despesas?ano=${anoAtual}&ordem=DESC&ordenarPor=dataDocumento&itens=100`);
         if (!response.ok) throw new Error('Falha ao consultar despesas.');
