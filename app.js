@@ -1,3 +1,4 @@
+
 /**
  * Observatório Parlamentar
  * Consulta dados oficiais da Câmara dos Deputados.
@@ -7,19 +8,31 @@
 const CONFIG = {
     API_URL: 'https://dadosabertos.camara.leg.br/api/v2',
 
-    // Proxy CORS
-    BASE_URL: 'https://corsproxy.io/?url=' +
-        encodeURIComponent('https://dadosabertos.camara.leg.br/api/v2'),
+    // Chave de API do CorsProxy
+    // Cole sua chave entre as aspas abaixo.
+    PROXY_API_KEY: 'bb1421f8',
 
     ITEMS_PER_PAGE: 100,
     CACHE_EXPIRATION_MS: 1000 * 60 * 30
 };
 
+// --- CONSTRUÇÃO DA URL DO PROXY ---
+function buildProxyUrl(endpoint) {
+    const targetUrl = `${CONFIG.API_URL}${endpoint}`;
+
+    const params = new URLSearchParams({
+        key: CONFIG.PROXY_API_KEY,
+        url: targetUrl
+    });
+
+    return `https://corsproxy.io/?${params.toString()}`;
+}
+
 // --- MÓDULO DE SERVIÇO DE DADOS ---
 const FederalChamberService = {
 
     async request(endpoint) {
-        const url = `${CONFIG.BASE_URL}${endpoint}`;
+        const url = buildProxyUrl(endpoint);
 
         const response = await fetch(url);
 
